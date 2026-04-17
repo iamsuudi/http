@@ -35,7 +35,13 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 
 	// validate value has trailing \r\n (already confirmed since we found \r\n)
 	value = bytes.TrimSpace(value)
-	h[string(bytes.ToLower(key))] = string(value)
+	key = bytes.ToLower(key)
+	v, ok := h[string(key)]
+	if ok {
+		h[string(key)] = v + ", " + string(value)
+	} else {
+		h[string(key)] = string(value)
+	}
 
 	return len(line) + 2, false, nil
 }

@@ -109,4 +109,17 @@ func TestHeadersParse(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 0, n)
 	assert.True(t, done)
+
+	// Test: Valid multiple values for the same header
+	headers = NewHeaders()
+	data = []byte("Set-Cookie: foo=bar\r\nSet-Cookie: baz=qux\r\n\r\n")
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	assert.Equal(t, 21, n)
+
+	data = data[n:]
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	assert.Equal(t, 21, n)
+	assert.Equal(t, "foo=bar, baz=qux", headers["set-cookie"])
 }
