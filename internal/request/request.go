@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/iamsuudi/httpfromtcp/internal/headers"
 )
 
 const bufferSize = 8
@@ -18,23 +20,29 @@ type RequestLine struct {
 
 type Request struct {
 	RequestLine RequestLine
-	Headers     map[string]string
+	Headers     headers.Headers
 	Body        []byte
 
-	initialized bool
-	done        bool
+	initialized          bool
+	headerCompleted      bool
+	requestLineCompleted bool
+}
+
+func (r *Request) Done() bool {
+	return r.headerCompleted && r.requestLineCompleted
 }
 
 func (r *Request) parse(data []byte) (int, error) {
-	if r.done {
+	if r.Done() {
 		return 0, fmt.Errorf("trying to read data in a done state")
 	}
 	if !r.initialized {
 		return 0, fmt.Errorf("trying to read data in an uninitialized state")
 	}
 
-	// Parse request line if not parsed yet
-	if r.RequestLine.Method == "" {
+	switch {
+	case !r.requestLineCompleted:
+		// Parse request line if not parsed yet
 		requestLine, n, err := parseRequestLine(data)
 		if n == 0 && err == nil {
 			return 0, nil
@@ -42,20 +50,18 @@ func (r *Request) parse(data []byte) (int, error) {
 			return 0, err
 		}
 		r.RequestLine = requestLine
+		r.requestLineCompleted = true
 		return n, nil
+	case !r.headerCompleted:
+		// Parse headers if not parsed yet or if headers are incomplete
+		n, done, err := r.Headers.Parse(data)
+		if done {
+			r.headerCompleted = done
+		}
+		return n, err
 	}
 
-	// Look for end of headers (\r\n\r\n)
-	// endOfHeadersIndex := bytes.Index(data, []byte("\r\n\r\n"))
-	// if endOfHeadersIndex == -1 {
-	// 	// Headers not complete yet
-	// 	return 0, nil
-	// }
-
-	// We've found the complete request (no body expected for now)
-	r.done = true
 	return 0, nil
-	// return endOfHeadersIndex + 4, nil
 }
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
@@ -64,9 +70,10 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 
 	var request = &Request{
 		initialized: true,
+		Headers:     headers.NewHeaders(),
 	}
 
-	for request.done == false {
+	for !request.Done() {
 		// If buffer is full, grow it to twice its current size
 		if readToIndex >= len(buff) {
 			newBuff := make([]byte, len(buff)*2, len(buff)*2)
@@ -78,7 +85,6 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		if err != nil {
 			// If err is io.EOF, we're done reading
 			if errors.Is(err, io.EOF) {
-				request.done = true
 				break
 			} else {
 				return nil, fmt.Errorf("failed to read request: %w", err)
