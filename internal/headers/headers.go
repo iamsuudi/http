@@ -9,6 +9,27 @@ import (
 type Headers map[string]string
 
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
+	totalParsedBytes := 0
+
+	for !done {
+		n, done, err = h.parseSingle(data)
+		if done {
+			totalParsedBytes += 2
+			break
+		} else if n == 0 && err == nil {
+			break
+		} else if err != nil {
+			break
+		}
+		totalParsedBytes += n
+		data = data[n:]
+	}
+
+	return totalParsedBytes, done, err
+}
+
+func (h Headers) parseSingle(data []byte) (n int, done bool, err error) {
+
 	// Is this last header?
 	// if the remaining data starts with \r\n, it's the end
 	if bytes.HasPrefix(data, []byte("\r\n")) {
@@ -18,7 +39,7 @@ func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	// extract the line (up to \r\n)
 	line, _, found := bytes.Cut(data, []byte("\r\n"))
 	if !found {
-		return 0, false, fmt.Errorf("incomplete header line")
+		return 0, false, nil
 	}
 
 	// extract key and value

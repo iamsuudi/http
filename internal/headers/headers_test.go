@@ -38,8 +38,8 @@ func TestHeadersParse(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, headers)
 	assert.Equal(t, "localhost:42069", headers["host"])
-	assert.Equal(t, 23, n)
-	assert.False(t, done)
+	assert.Equal(t, 25, n)
+	assert.True(t, done)
 
 	// Test: Valid header with capital letters in key
 	headers = NewHeaders()
@@ -47,8 +47,8 @@ func TestHeadersParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	assert.Equal(t, "application/json", headers["content-type"])
-	assert.Equal(t, 32, n)
-	assert.False(t, done)
+	assert.Equal(t, 34, n)
+	assert.True(t, done)
 
 	// Test: Invalid character in header key
 	headers = NewHeaders()
@@ -73,33 +73,17 @@ func TestHeadersParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	assert.Equal(t, "localhost:42069", headers["host"])
-	assert.Equal(t, 25, n)
-	assert.False(t, done)
+	assert.Equal(t, 27, n)
+	assert.True(t, done)
 
-	// Test: Valid 2 headers with existing headers (called multiple times until done)
+	// Test: Valid 2 headers with existing headers
 	headers = NewHeaders()
 	data = []byte("Host: localhost:42069\r\nContent-Type: application/json\r\n\r\n")
-
-	// First call - parse first header
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
 	assert.Equal(t, "localhost:42069", headers["host"])
-	assert.Equal(t, 23, n)
-	assert.False(t, done)
-
-	// Second call - parse second header
-	data = data[n:]
-	n, done, err = headers.Parse(data)
-	require.NoError(t, err)
 	assert.Equal(t, "application/json", headers["content-type"])
-	assert.Equal(t, 32, n)
-	assert.False(t, done)
-
-	// Third call - should be done (only \r\n remains)
-	data = data[n:]
-	n, done, err = headers.Parse(data)
-	require.NoError(t, err)
-	assert.Equal(t, 0, n)
+	assert.Equal(t, 57, n)
 	assert.True(t, done)
 
 	// Test: Valid done (empty header section)
@@ -107,7 +91,7 @@ func TestHeadersParse(t *testing.T) {
 	data = []byte("\r\n")
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
-	assert.Equal(t, 0, n)
+	assert.Equal(t, 2, n)
 	assert.True(t, done)
 
 	// Test: Valid multiple values for the same header
@@ -115,11 +99,7 @@ func TestHeadersParse(t *testing.T) {
 	data = []byte("Set-Cookie: foo=bar\r\nSet-Cookie: baz=qux\r\n\r\n")
 	n, done, err = headers.Parse(data)
 	require.NoError(t, err)
-	assert.Equal(t, 21, n)
-
-	data = data[n:]
-	n, done, err = headers.Parse(data)
-	require.NoError(t, err)
-	assert.Equal(t, 21, n)
 	assert.Equal(t, "foo=bar, baz=qux", headers["set-cookie"])
+	assert.Equal(t, 44, n)
+	assert.True(t, done)
 }
