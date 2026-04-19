@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 
 	"github.com/iamsuudi/httpfromtcp/internal/headers"
@@ -24,12 +25,36 @@ type Request struct {
 	Body        []byte
 
 	initialized          bool
+	bodyCompleted        bool
 	headerCompleted      bool
 	requestLineCompleted bool
+	bodyBytesRead        int
 }
 
 func (r *Request) Done() bool {
-	return r.headerCompleted && r.requestLineCompleted
+	return r.requestLineCompleted && r.headerCompleted && r.bodyCompleted
+}
+
+func (r *Request) InitializeBodyBuffer() error {
+	v, ok := r.Headers.Get("content-length")
+	if !ok {
+		r.bodyCompleted = true
+		return nil
+	}
+
+	contentLength, err := strconv.ParseInt(v, 10, 64)
+	if err != nil {
+		return err
+	}
+
+	// Make sure body buffer is large enough
+	r.Body = make([]byte, contentLength)
+	if contentLength == 0 {
+		r.bodyCompleted = true
+		return nil
+	}
+
+	return nil
 }
 
 func (r *Request) parse(data []byte) (int, error) {
@@ -51,6 +76,29 @@ func (r *Request) parse(data []byte) (int, error) {
 		}
 		r.RequestLine = requestLine
 		r.requestLineCompleted = true
+		return n, nil
+	case !r.headerCompleted:
+		// Parse headers if not parsed yet or if headers are incomplete
+		n, done, err := r.Headers.Parse(data)
+		if done {
+			r.headerCompleted = done
+			return n, r.InitializeBodyBuffer()
+		}
+		return n, err
+	case !r.bodyCompleted:
+		// If adding this data would exceed content-length, throw error
+		if r.bodyBytesRead+len(data) > len(r.Body) {
+			return 0, fmt.Errorf("content exceeded specified content-length: %d > %d", r.bodyBytesRead+len(data), len(r.Body))
+		}
+
+		// Read content into body buffer
+		n := copy(r.Body[r.bodyBytesRead:], data)
+		r.bodyBytesRead += n
+
+		// Check if body buffer is full and mark body completed
+		if r.bodyBytesRead == len(r.Body) {
+			r.bodyCompleted = true
+		}
 		return n, nil
 	case !r.headerCompleted:
 		// Parse headers if not parsed yet or if headers are incomplete
@@ -85,6 +133,11 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		if err != nil {
 			// If err is io.EOF, we're done reading
 			if errors.Is(err, io.EOF) {
+				// If content is less than content-length return error
+				if request.bodyBytesRead < len(request.Body) {
+					return nil, fmt.Errorf("EOF before reading full body: got %d, expected %d", request.bodyBytesRead, len(request.Body))
+				}
+				request.bodyCompleted = true
 				break
 			} else {
 				return nil, fmt.Errorf("failed to read request: %w", err)

@@ -4,9 +4,15 @@ import (
 	"bytes"
 	"fmt"
 	"regexp"
+	"strings"
 )
 
 type Headers map[string]string
+
+func (h Headers) Get(key string) (string, bool) {
+	v, ok := h[strings.ToLower(key)]
+	return v, ok
+}
 
 func (h Headers) Parse(data []byte) (n int, done bool, err error) {
 	totalParsedBytes := 0
